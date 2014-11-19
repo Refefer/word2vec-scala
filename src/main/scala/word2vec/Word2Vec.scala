@@ -1,3 +1,7 @@
+package word2vec
+
+import scala.collection.mutable
+
 // Copyright 2013 trananh
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,66 +15,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-import java.io._
-import scala.Array
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
-
-
-/** A simple binary file reader.
-  * @constructor Create a binary file reader.
-  * @param file The binary file to be read.
-  *
-  * @author trananh
-  */
-class VecBinaryReader(val file: File) {
-
-  /** Overloaded constructor */
-  def this(filename: String) = this(new File(filename))
-
-  /** ASCII values for common delimiter characters */
-  private val SPACE = 32
-  private val LF = 10
-
-  /** Open input streams */
-  private val fis = new FileInputStream(file)
-  private val bis = new BufferedInputStream(fis)
-  private val dis = new DataInputStream(bis)
-
-  /** Close the stream. */
-  def close() { dis.close(); bis.close(); fis.close() }
-
-  /** Read the next byte.
-    * @return The next byte from the file.
-    */
-  def read(): Byte = dis.readByte()
-
-  /** Read the next token as a string, using the provided delimiters as breaking points.
-    * @param delimiters ASCII code of delimiter characters (default to SPACE and LINE-FEED).
-    * @return String representation of the next token.
-    */
-  def readToken(delimiters: Set[Int] = Set(SPACE, LF)): String = {
-    val bytes = new ArrayBuffer[Byte]()
-    val sb = new StringBuilder()
-    var byte = dis.readByte()
-    while (!delimiters.contains(byte)) {
-      bytes.append(byte)
-      byte = dis.readByte()
-    }
-    sb.append(new String(bytes.toArray[Byte])).toString()
-  }
-
-  /** Read next 4 bytes as a floating-point number.
-    * @return The floating-point value of the next 4 bytes.
-    */
-  def readFloat(): Float = {
-    // We need to reverse the byte order here due to endian-compatibility.
-    java.lang.Float.intBitsToFloat(java.lang.Integer.reverseBytes(dis.readInt()))
-  }
-
-}
-
 
 /** A Scala port of the word2vec model.  This interface allows the user to access the vector representations
   * output by the word2vec tool, as well as perform some common operations on those vectors.  It does NOT
@@ -91,60 +35,10 @@ class VecBinaryReader(val file: File) {
   *
   * @author trananh
   */
-class Word2Vec {
-
-  /** Map of words and their associated vector representations */
-  private val vocab = new mutable.HashMap[String, Array[Float]]()
+class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
 
   /** Number of words */
-  private var numWords = 0
-
-  /** Number of floating-point values associated with each word (i.e., length of the vectors) */
-  private var vecSize = 0
-
-  /** Load data from a binary file.
-    * @param filename Path to file containing word projections in the BINARY FORMAT.
-    * @param limit Maximum number of words to load from file (a.k.a. max vocab size).
-    * @param normalize Normalize the loaded vectors if true (default to true).
-    */
-  def load(filename: String, limit: Integer = Int.MaxValue, normalize: Boolean = true): Unit = {
-    // Check edge case
-    val file = new File(filename)
-    if (!file.exists()) {
-      throw new FileNotFoundException("Binary vector file not found <" + file.toString + ">")
-    }
-
-    // Create new reader to read data
-    val reader = new VecBinaryReader(file)
-
-    // Read header info
-    numWords = Integer.parseInt(reader.readToken())
-    vecSize = Integer.parseInt(reader.readToken())
-    println("\nFile contains " + numWords + " words with vector size " + vecSize)
-
-    // Read the vocab words and their associated vector representations
-    var word = ""
-    val vector = new Array[Float](vecSize)
-    var normFactor = 1f
-    for (_ <- 0 until math.min(numWords, limit)) {
-      // Read the word
-      word = reader.readToken()
-
-      // Read the vector representation (each vector contains vecSize number of floats)
-      for (i <- 0 until vector.length) vector(i) = reader.readFloat()
-
-      // Store the normalized vector representation, keyed by the word
-      normFactor = if (normalize) magnitude(vector).toFloat else 1f
-      vocab.put(word, vector.map(_ / normFactor) )
-
-      // Eat up the next delimiter character
-      reader.read()
-    }
-    println("Loaded " + math.min(numWords, limit) + " words.\n")
-
-    // Finally, close the reader
-    reader.close()
-  }
+  private val numWords = vocab.size
 
   /** Return the number of words in the vocab.
     * @return Number of words in the vocab.
@@ -155,13 +49,6 @@ class Word2Vec {
     * @return Size of the vectors.
     */
   def vectorSize: Int = vecSize
-
-  /** Clear internal data. */
-  def clear() {
-    vocab.clear()
-    numWords = 0
-    vecSize = 0
-  }
 
   /** Check if the word is present in the vocab map.
     * @param word Word to be checked.
@@ -227,20 +114,14 @@ class Word2Vec {
     cosine(vocab.get(word1).get, vocab.get(word2).get)
   }
 
-  /** Compute the magnitude of the vector.
-    * @param vec The vector.
-    * @return The magnitude of the vector.
-    */
-  def magnitude(vec: Array[Float]): Double = {
-    math.sqrt(vec.foldLeft(0.0){(sum, x) => sum + (x * x)})
-  }
-
+  
   /** Normalize the vector.
     * @param vec The vector.
     * @return A normalized vector.
     */
   def normalize(vec: Array[Float]): Array[Float] = {
-    val mag = magnitude(vec).toFloat
+
+    val mag = math.sqrt(vec.toStream.map(a => a * a).sum).toFloat
     vec.map(_ / mag)
   }
 
@@ -375,6 +256,19 @@ class Word2Vec {
 
 }
 
+object Word2Vec {
+  /** Load data from a binary file.
+    * @param filename Path to file containing word projections in the BINARY FORMAT.
+    * @param limit Maximum number of words to load from file (a.k.a. max vocab size).
+    * @param normalize Normalize the loaded vectors if true (default to true).
+    */
+  def apply(filename: String, limit: Integer = Int.MaxValue, normalize: Boolean = true): Option[Word2Vec] = {
+    for(v <- VecBinaryReader.load(filename, limit, normalize)) yield {
+      new Word2Vec(v.vectors, v.size)
+    }
+  }
+}
+
 
 /** ********************************************************************************
   * Demo of the Scala ported word2vec model.
@@ -385,8 +279,7 @@ object RunWord2Vec {
   /** Demo. */
   def main(args: Array[String]) {
     // Load word2vec model from binary file.
-    val model = new Word2Vec()
-    model.load("../word2vec-scala/vectors.bin")
+    val model = Word2Vec("../word2vec-scala/vectors.bin").get
 
     // distance: Find N closest words
     model.pprint(model.distance(List("france"), N = 10))
