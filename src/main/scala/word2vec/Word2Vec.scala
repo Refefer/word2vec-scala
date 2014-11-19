@@ -1,6 +1,8 @@
 package word2vec
 
 import scala.collection.mutable
+import spire.algebra._
+import spire.implicits._
 
 // Copyright 2013 trananh
 //
@@ -54,17 +56,13 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     * @param word Word to be checked.
     * @return True if the word is in the vocab map.
     */
-  def contains(word: String): Boolean = {
-    vocab.get(word).isDefined
-  }
+  def contains(word: String): Boolean = vocab.contains(word)
 
   /** Get the vector representation for the word.
     * @param word Word to retrieve vector for.
     * @return The vector representation of the word.
     */
-  def vector(word: String): Array[Float] = {
-    vocab.getOrElse(word, Array[Float]())
-  }
+  def vector(word: String): Option[Array[Float]] = vocab.get(word)
 
   /** Compute the Euclidean distance between two vectors.
     * @param vec1 The first vector.
@@ -72,10 +70,7 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     * @return The Euclidean distance between the two vectors.
     */
   def euclidean(vec1: Array[Float], vec2: Array[Float]): Double = {
-    assert(vec1.length == vec2.length, "Uneven vectors!")
-    var sum = 0.0
-    for (i <- 0 until vec1.length) sum += math.pow(vec1(i) - vec2(i), 2)
-    math.sqrt(sum)
+    (vec1 - vec2).map(_ pow 2).sum.sqrt
   }
 
   /** Compute the Euclidean distance between the vector representations of the words.
@@ -83,9 +78,8 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     * @param word2 The other word.
     * @return The Euclidean distance between the vector representations of the words.
     */
-  def euclidean(word1: String, word2: String): Double = {
-    assert(contains(word1) && contains(word2), "Out of dictionary word! " + word1 + " or " + word2)
-    euclidean(vocab.get(word1).get, vocab.get(word2).get)
+  def euclidean(word1: String, word2: String): Option[Double] = {
+    for(v1 <- vector(word1); v2 <- vector(word2)) yield euclidean(v1, v2)
   }
 
   /** Compute the cosine similarity score between two vectors.
@@ -95,13 +89,10 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     */
   def cosine(vec1: Array[Float], vec2: Array[Float]): Double = {
     assert(vec1.length == vec2.length, "Uneven vectors!")
-    var dot, sum1, sum2 = 0.0
-    for (i <- 0 until vec1.length) {
-      dot += (vec1(i) * vec2(i))
-      sum1 += (vec1(i) * vec1(i))
-      sum2 += (vec2(i) * vec2(i))
-    }
-    dot / (math.sqrt(sum1) * math.sqrt(sum2))
+    val dot = vec1 dot vec2
+    val sum1 = vec1 dot vec1
+    val sum2 = vec2 dot vec2
+    dot / (sum1.sqrt * sum2.sqrt)
   }
 
   /** Compute the cosine similarity score between the vector representations of the words.
@@ -109,22 +100,11 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     * @param word2 The other word.
     * @return The cosine similarity score between the vector representations of the words.
     */
-  def cosine(word1: String, word2: String): Double = {
-    assert(contains(word1) && contains(word2), "Out of dictionary word! " + word1 + " or " + word2)
-    cosine(vocab.get(word1).get, vocab.get(word2).get)
+  def cosine(word1: String, word2: String): Option[Double] = {
+    for(v1 <- vector(word1); v2 <- vector(word2)) yield cosine(v1, v2)
   }
 
   
-  /** Normalize the vector.
-    * @param vec The vector.
-    * @return A normalized vector.
-    */
-  def normalize(vec: Array[Float]): Array[Float] = {
-
-    val mag = math.sqrt(vec.toStream.map(a => a * a).sum).toFloat
-    vec.map(_ / mag)
-  }
-
   /** Find the vector representation for the given list of word(s) by aggregating (summing) the
     * vector for each word.
     * @param input The input word(s).
@@ -132,10 +112,7 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     */
   def sumVector(input: List[String]): Array[Float] = {
     // Find the vector representation for the input. If multiple words, then aggregate (sum) their vectors.
-    input.foreach(w => assert(contains(w), "Out of dictionary word! " + w))
-    val vector = new Array[Float](vecSize)
-    input.foreach(w => for (j <- 0 until vector.length) vector(j) += vocab.get(w).get(j))
-    vector
+    input.map(vocab) reduce {_+_}
   }
 
   /** Find N closest terms in the vocab to the given vector, using only words from the in-set (if defined)
@@ -196,7 +173,7 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     // Find the vector representation for the input. If multiple words, then aggregate (sum) their vectors.
     val vector = sumVector(input)
 
-    nearestNeighbors(normalize(vector), outSet = input.toSet, N = N)
+    nearestNeighbors(vector.normalize, outSet = input.toSet, N = N)
   }
 
   /** Find the N closest terms in the vocab to the analogy:
@@ -213,19 +190,11 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     *
     * @return The N closest terms in the vocab to the analogy and their associated cosine similarity scores.
     */
-  def analogy(word1: String, word2: String, word3: String, N: Integer = 40): List[(String, Float)] = {
-    // Check for edge cases
-    if (!contains(word1) || !contains(word2) || !contains(word3)) {
-      println("Out of dictionary word! " + Array(word1, word2, word3).mkString(" or "))
-      return List[(String, Float)]()
+  def analogy(word1: String, word2: String, word3: String, N: Integer = 40): Option[List[(String, Float)]] = {
+    for(v1 <- vector(word1); v2 <- vector(word2); v3 <- vector(word3)) yield {
+      val vector = v2 - v1 + v3
+      nearestNeighbors(vector.normalize, outSet = Set(word1, word2, word3), N = N)
     }
-
-    // Find the vector approximation for the missing analogy.
-    val vector = new Array[Float](vecSize)
-    for (j <- 0 until vector.length)
-      vector(j) = vocab.get(word2).get(j) - vocab.get(word1).get(j) + vocab.get(word3).get(j)
-
-    nearestNeighbors(normalize(vector), outSet = Set(word1, word2, word3), N = N)
   }
 
   /** Rank a set of words by their respective distance to some central term.
@@ -234,12 +203,13 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     * @return Ordered list of words and their associated scores.
     */
   def rank(word: String, set: Set[String]): List[(String, Float)] = {
+
     // Check for edge cases
-    if (set.size == 0) return List[(String, Float)]()
+    if (set.size == 0) return List()
     (set + word).foreach(w => {
       if (!contains(w)) {
         println("Out of dictionary word! " + w)
-        return List[(String, Float)]()
+        return List()
       }
     })
 
@@ -287,7 +257,7 @@ object RunWord2Vec {
     model.pprint(model.distance(List("france", "usa", "usa")))
 
     // analogy: "king" is to "queen", as "man" is to ?
-    model.pprint(model.analogy("king", "queen", "man", N = 10))
+    model.pprint(model.analogy("king", "queen", "man", N = 10).get)
 
     // rank: Rank a set of words by their respective distance to the central term
     model.pprint(model.rank("apple", Set("orange", "soda", "lettuce")))
