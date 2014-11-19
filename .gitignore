@@ -1,10 +1,80 @@
-.DS_Store
-*.class
-*.log
-.idea
-.idea/*
-*.iml
-out
+.*
+!.gitignore
 
-# Scala-IDE specific
-.scala_dependencies
+# java
+
+*.class
+*.jar
+*.war
+*.ear
+
+# intellij
+
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# eclipse
+
+.classpath
+.project
+.settings/
+
+# tags
+tags
+
+# sbt
+
+target/
+
+# finatra
+
+logs
+
+# playframework
+
+lib
+logs
+modules
+precompiled
+project/project
+project/target
+target
+tmp
+test-result
+
+# C
+# compiled object files
+*.lo
+*.o
+# compiled dynamic libraries
+*.so
+*.la
+*.a
+# compiled misc
+*.dep
+*.gcda
+*.gcno
+*.gcov
+
+# Python
+*.pyc
+# core dump
+core*
+
+# temporary
+*.swp
+*~
+*.bak
+*.orig
+*.pid
+*.DS_Store
+RUNNING_PID
+classpath.txt
+
+# packages
+*.tar.gz
+*.tar.bz2
+*.zip
+*.bz2
