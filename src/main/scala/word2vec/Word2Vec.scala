@@ -4,6 +4,8 @@ import scala.collection.mutable
 import spire.algebra._
 import spire.implicits._
 
+// Copyright 2014 astanton
+// Derived work from:
 // Copyright 2013 trananh
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -79,7 +81,9 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     * @return The Euclidean distance between the vector representations of the words.
     */
   def euclidean(word1: String, word2: String): Option[Double] = {
-    for(v1 <- vector(word1); v2 <- vector(word2)) yield euclidean(v1, v2)
+    traverseVectors(List(word1, word2)) collectFirst {
+      case v1 :: v2 :: Nil => euclidean(v1, v2)
+    }
   }
 
   /** Compute the cosine similarity score between two vectors.
@@ -101,18 +105,19 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     * @return The cosine similarity score between the vector representations of the words.
     */
   def cosine(word1: String, word2: String): Option[Double] = {
-    for(v1 <- vector(word1); v2 <- vector(word2)) yield cosine(v1, v2)
+    traverseVectors(List(word1, word2)) collectFirst {
+      case v1 :: v2 :: Nil => cosine(v1, v2)
+    }
   }
-
   
   /** Find the vector representation for the given list of word(s) by aggregating (summing) the
     * vector for each word.
     * @param input The input word(s).
     * @return The sum vector (aggregated from the input vectors).
     */
-  def sumVector(input: List[String]): Array[Float] = {
+  private def sumVector(vecs: List[Array[Float]]): Array[Float] = {
     // Find the vector representation for the input. If multiple words, then aggregate (sum) their vectors.
-    input.map(vocab) reduce {_+_}
+    vecs reduce {_+_}
   }
 
   /** Find N closest terms in the vocab to the given vector, using only words from the in-set (if defined)
@@ -127,28 +132,25 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
   def nearestNeighbors(vector: Array[Float], inSet: Option[Set[String]] = None,
                        outSet: Set[String] = Set[String](), N: Integer = 40)
   : List[(String, Float)] = {
-    // For performance efficiency, we maintain the top/closest terms using a priority queue.
-    // Note: We invert the distance here because a priority queue will dequeue the highest priority element,
-    //       but we would like it to dequeue the lowest scoring element instead.
-    val top = new mutable.PriorityQueue[(String, Float)]()(Ordering.by(-_._2))
 
-    // Iterate over each token in the vocab and compute its cosine score to the input.
-    var dist = 0f
-    val iterator = if (inSet.isDefined) vocab.filterKeys(k => inSet.get.contains(k)).iterator else vocab.iterator
-    iterator.foreach(entry => {
-      // Skip tokens in the out set
-      if (!outSet.contains(entry._1)) {
-        dist = cosine(vector, entry._2).toFloat
-        if (top.size < N || top.head._2 < dist) {
-          top.enqueue((entry._1, dist))
-          if (top.length > N) {
-            // If the queue contains over N elements, then dequeue the highest priority element
-            // (which will be the element with the lowest cosine score).
-            top.dequeue()
-          }
-        }
+    def items = for(s <- inSet) yield {
+      s.toStream collect { case k if vocab.contains(k) => k -> vocab(k) }
+    }
+
+    def it = items.getOrElse(vocab.toStream) collect {
+      case (k, v) if !outSet.contains(k) => k -> cosine(vector, v).toFloat
+    }
+
+    // Scala needs to have an immutable pq.  I should write one
+    val top = new mutable.PriorityQueue[(String, Float)]()(Ordering.by(-_._2))
+    it.zipWithIndex.foldLeft(top) {
+      case (agg, ((k, dist), i)) if i < N => agg += k -> dist 
+      case (agg, ((k, dist), i)) if agg.head._2 < dist => { 
+        agg.dequeue()
+        agg += k -> dist
       }
-    })
+      case (agg, _) => agg
+    }
 
     // Return the top N results as a sorted list.
     assert(top.length <= N)
@@ -160,20 +162,15 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     * @param N The maximum number of terms to return (default to 40).
     * @return The N closest terms in the vocab to the input word(s) and their associated cosine similarity scores.
     */
-  def distance(input: List[String], N: Integer = 40): List[(String, Float)] = {
-    // Check for edge cases
-    if (input.size == 0) return List[(String, Float)]()
-    input.foreach(w => {
-      if (!contains(w)) {
-        println("Out of dictionary word! " + w)
-        return List[(String, Float)]()
-      }
-    })
+  def distance(input: List[String], N: Integer = 40): Option[List[(String, Float)]] = {
 
     // Find the vector representation for the input. If multiple words, then aggregate (sum) their vectors.
-    val vector = sumVector(input)
-
-    nearestNeighbors(vector.normalize, outSet = input.toSet, N = N)
+    input match {
+      case Nil => Some(List[(String, Float)]())
+      case _ => traverseVectors(input) map { vecs =>
+        nearestNeighbors(sumVector(vecs).normalize, outSet=input.toSet, N=N)
+      }
+    }
   }
 
   /** Find the N closest terms in the vocab to the analogy:
@@ -191,9 +188,11 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     * @return The N closest terms in the vocab to the analogy and their associated cosine similarity scores.
     */
   def analogy(word1: String, word2: String, word3: String, N: Integer = 40): Option[List[(String, Float)]] = {
-    for(v1 <- vector(word1); v2 <- vector(word2); v3 <- vector(word3)) yield {
-      val vector = v2 - v1 + v3
-      nearestNeighbors(vector.normalize, outSet = Set(word1, word2, word3), N = N)
+    traverseVectors(List(word1, word2, word3)) collectFirst {
+      case v1 :: v2 :: v3 :: Nil => {
+        val vector = v2 - v1 + v3
+        nearestNeighbors(vector.normalize, outSet = Set(word1, word2, word3), N = N)
+      }
     }
   }
 
@@ -203,17 +202,9 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     * @return Ordered list of words and their associated scores.
     */
   def rank(word: String, set: Set[String]): List[(String, Float)] = {
-
-    // Check for edge cases
-    if (set.size == 0) return List()
-    (set + word).foreach(w => {
-      if (!contains(w)) {
-        println("Out of dictionary word! " + w)
-        return List()
-      }
-    })
-
-    nearestNeighbors(vocab.get(word).get, inSet = Option(set), N = set.size)
+    vocab.get(word).map({
+      v => nearestNeighbors(v, inSet = Some(set), N = set.size)
+    }).getOrElse(List())
   }
 
   /** Pretty print the list of words and their associated scores.
@@ -222,6 +213,13 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
   def pprint(words: List[(String, Float)]) = {
     println("\n%50s".format("Word") + (" " * 7) + "Cosine distance\n" + ("-" * 72))
     println(words.map(s => "%50s".format(s._1) + (" " * 7) + "%15f".format(s._2)).mkString("\n"))
+  }
+
+  def traverseVectors(words: List[String]): Option[List[Array[Float]]] = {
+    val vecs = words.foldLeft(Option(List[Array[Float]]())) {
+      case (agg, word) => agg.flatMap(lst => vector(word).map(v => v :: lst))
+    }
+    vecs map {_.reverse}
   }
 
 }
@@ -237,6 +235,7 @@ object Word2Vec {
       new Word2Vec(v.vectors, v.size)
     }
   }
+
 }
 
 
@@ -252,9 +251,9 @@ object RunWord2Vec {
     val model = Word2Vec("../word2vec-scala/vectors.bin").get
 
     // distance: Find N closest words
-    model.pprint(model.distance(List("france"), N = 10))
-    model.pprint(model.distance(List("france", "usa")))
-    model.pprint(model.distance(List("france", "usa", "usa")))
+    model.pprint(model.distance(List("france"), N = 10).get)
+    model.pprint(model.distance(List("france", "usa")).get)
+    model.pprint(model.distance(List("france", "usa", "usa")).get)
 
     // analogy: "king" is to "queen", as "man" is to ?
     model.pprint(model.analogy("king", "queen", "man", N = 10).get)
