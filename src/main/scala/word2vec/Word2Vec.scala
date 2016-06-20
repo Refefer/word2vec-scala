@@ -248,7 +248,7 @@ object RunWord2Vec {
   /** Demo. */
   def main(args: Array[String]) {
     // Load word2vec model from binary file.
-    val model = Word2Vec("../word2vec-scala/vectors.bin").get
+    val model = Word2Vec("vectors.bin").get
 
     // distance: Find N closest words
     model.pprint(model.distance(List("france"), N = 10).get)
