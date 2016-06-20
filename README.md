@@ -129,7 +129,7 @@ model.pprint( model.rank("apple", Set("orange", "soda", "lettuce")) )
 
 ## Compatibility
 
-- **[09/2013]** The code was tested to work with models trained using revision
-[r33](http://word2vec.googlecode.com/svn/trunk/?p=33) of the word2vec toolkit.
+- **[06/2016]** The code was tested to work with models trained using 
+[gensim 0.12.4](https://github.com/RaRe-Technologies/gensim).
 It should also work with future revisions, assuming that the output format does
 not change.

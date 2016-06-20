@@ -104,8 +104,9 @@ object VecBinaryReader {
       vector(i) = f
     }
 
-    // Eat up the next delimiter character
-    reader.read[Byte]
+    // Modern tools like gensim stores model without delimiter character after last element of each vector
+//    // Eat up the next delimiter character
+//    reader.read[Byte]
 
     // Store the normalized vector representation, keyed by the word
     word -> (if (normalize) normVector(vector) else vector)
