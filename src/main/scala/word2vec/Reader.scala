@@ -45,9 +45,9 @@ object TypeReader {
 }
 
 /** A simple binary file reader.
+  *
   * @constructor Create a binary file reader.
   * @param file The binary file to be read.
-  *
   * @author trananh
   */
 class VecBinaryReader(file: File) {
@@ -83,6 +83,7 @@ object VecBinaryReader {
   }
 
   /** Compute the magnitude of the vector.
+    *
     * @param vec The vector.
     * @return The magnitude of the vector.
     */
@@ -95,7 +96,7 @@ object VecBinaryReader {
     vec.map(a => (a / norm).toFloat)
   }
 
-  def readVector(reader: VecBinaryReader, vecSize:Int, normalize: Boolean): (String, Array[Float]) = {
+  def readVector(reader: VecBinaryReader, vecSize:Int, normalize: Boolean, oldFormat: Boolean): (String, Array[Float]) = {
      // Read the word
     val word = reader.read[String]
 
@@ -105,21 +106,22 @@ object VecBinaryReader {
     }
 
     // Modern tools like gensim stores model without delimiter character after last element of each vector
-//    // Eat up the next delimiter character
-//    reader.read[Byte]
-
+    if (oldFormat) {
+      // Eat up the next delimiter character
+      reader.read[Byte]
+    }
     // Store the normalized vector representation, keyed by the word
     word -> (if (normalize) normVector(vector) else vector)
   }
 
-  def load(filename: String, limit: Integer = Int.MaxValue, normalize: Boolean = true): Option[Vocab] = {
-    for(file <- loadFile(filename)) yield VecBinaryReader.withReader(file) { reader => 
+  def load(filename: String, limit: Integer = Int.MaxValue, normalize: Boolean = true, oldFormat: Boolean): Option[Vocab] = {
+    for(file <- loadFile(filename)) yield VecBinaryReader.withReader(file) { reader =>
       // Read header info
       val numWords = reader.read[Int]
       val vecSize = reader.read[Int]
       println("\nFile contains " + numWords + " words with vector size " + vecSize)
 
-      def wordPairs = Stream.continually(readVector(reader, vecSize, normalize))
+      def wordPairs = Stream.continually(readVector(reader, vecSize, normalize, oldFormat))
       val N = numWords.min(limit)
 
       val map = wordPairs.take(N).toMap

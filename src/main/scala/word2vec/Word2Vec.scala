@@ -231,9 +231,10 @@ object Word2Vec {
     * @param filename Path to file containing word projections in the BINARY FORMAT.
     * @param limit Maximum number of words to load from file (a.k.a. max vocab size).
     * @param normalize Normalize the loaded vectors if true (default to true).
+    * @param oldFormat Load model stored in old format - with delimiter between vectors (default to false).
     */
-  def apply(filename: String, limit: Integer = Int.MaxValue, normalize: Boolean = true): Option[Word2Vec] = {
-    for(v <- VecBinaryReader.load(filename, limit, normalize)) yield {
+  def apply(filename: String, limit: Integer = Int.MaxValue, normalize: Boolean = true, oldFormat: Boolean = false): Option[Word2Vec] = {
+    for(v <- VecBinaryReader.load(filename, limit, normalize, oldFormat)) yield {
       new Word2Vec(v.vectors, v.size, normalize)
     }
   }
