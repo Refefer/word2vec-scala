@@ -39,7 +39,7 @@ import spire.implicits._
   *
   * @author trananh
   */
-class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
+class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int, normalized: Boolean) {
 
   /** Number of words */
   private val numWords = vocab.size
@@ -94,9 +94,13 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
   def cosine(vec1: Array[Float], vec2: Array[Float]): Double = {
     assert(vec1.length == vec2.length, "Uneven vectors!")
     val dot = vec1 dot vec2
-    val sum1 = vec1 dot vec1
-    val sum2 = vec2 dot vec2
-    dot / (sum1.sqrt * sum2.sqrt)
+    if (normalized) {
+      dot
+    } else {
+      val sum1 = vec1 dot vec1
+      val sum2 = vec2 dot vec2
+      dot / (sum1.sqrt * sum2.sqrt)
+    }
   }
 
   /** Compute the cosine similarity score between the vector representations of the words.
@@ -110,13 +114,11 @@ class Word2Vec(vocab: Map[String, Array[Float]], vecSize: Int) {
     }
   }
   
-  /** Find the vector representation for the given list of word(s) by aggregating (summing) the
-    * vector for each word.
-    * @param input The input word(s).
+  /** Aggregate (sum) the given list of vectors
+    * @param vecs The input vector(s).
     * @return The sum vector (aggregated from the input vectors).
     */
   private def sumVector(vecs: List[Array[Float]]): Array[Float] = {
-    // Find the vector representation for the input. If multiple words, then aggregate (sum) their vectors.
     vecs reduce {_+_}
   }
 
@@ -229,10 +231,11 @@ object Word2Vec {
     * @param filename Path to file containing word projections in the BINARY FORMAT.
     * @param limit Maximum number of words to load from file (a.k.a. max vocab size).
     * @param normalize Normalize the loaded vectors if true (default to true).
+    * @param oldFormat Load model stored in old format - with delimiter between vectors (default to false).
     */
-  def apply(filename: String, limit: Integer = Int.MaxValue, normalize: Boolean = true): Option[Word2Vec] = {
-    for(v <- VecBinaryReader.load(filename, limit, normalize)) yield {
-      new Word2Vec(v.vectors, v.size)
+  def apply(filename: String, limit: Integer = Int.MaxValue, normalize: Boolean = true, oldFormat: Boolean = false): Option[Word2Vec] = {
+    for(v <- VecBinaryReader.load(filename, limit, normalize, oldFormat)) yield {
+      new Word2Vec(v.vectors, v.size, normalize)
     }
   }
 
@@ -248,7 +251,7 @@ object RunWord2Vec {
   /** Demo. */
   def main(args: Array[String]) {
     // Load word2vec model from binary file.
-    val model = Word2Vec("../word2vec-scala/vectors.bin").get
+    val model = Word2Vec("vectors.bin").get
 
     // distance: Find N closest words
     model.pprint(model.distance(List("france"), N = 10).get)
